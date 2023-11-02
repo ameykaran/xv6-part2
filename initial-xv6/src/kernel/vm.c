@@ -308,19 +308,27 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+
+    // set the old pte as non-writable
+    *pte &= ~PTE_W;
+
+    // set the COW flag to true
+    *pte |= PTE_COW;
+
     pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    inc_pte_count(pa);
+
+    if(mappages(new, i, PGSIZE, (uint64)mem, PTE_FLAGS(*pte)) != 0){
       kfree(mem);
       goto err;
     }
@@ -355,6 +363,34 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+
+    if (va0 >= MAXVA)
+      return -1;
+
+    pte_t *p = walk(pagetable, va0, 0);
+    if (p == 0 || (*p & PTE_U) == 0 || (*p & PTE_V) == 0)
+      panic("copyout: address not valid");
+
+    if (*p & PTE_COW)
+    {
+      uint flags;
+      char *mem;
+      uint64 pa = PTE2PA(*p);
+
+      flags = (PTE_FLAGS(*p) | PTE_W) & ~PTE_COW;      // Make it writable and remove cow
+
+      // allocate a new pte
+      if ((mem = kalloc()) == 0)
+        panic("copyout: cow copy");
+
+      // copy the old entry to the newly allocated one
+      memmove(mem, (char *)pa, PGSIZE);
+      *p = PA2PTE(mem) | flags;
+
+      // decrease the counter or free the pte 
+      kfree((char *)pa);
+    }
+
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

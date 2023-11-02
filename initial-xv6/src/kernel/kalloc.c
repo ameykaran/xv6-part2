@@ -23,9 +23,40 @@ struct {
   struct run *freelist;
 } kmem;
 
+#define PA_NUM (PGROUNDUP(PHYSTOP) / PGSIZE)
+
+struct spinlock pte_lock;
+int pte_count[PA_NUM];
+
+void
+inc_pte_count(void *pa)
+{
+  acquire(&pte_lock);
+  pte_count[(uint64)pa / PGSIZE] += 1;
+  release(&pte_lock);
+}
+
+void
+dec_pte_count(void *pa)
+{
+  acquire(&pte_lock);
+  pte_count[(uint64)pa / PGSIZE] -= 1;
+  release(&pte_lock);
+}
+
+void
+set_pte_count(void *pa, int cnt)
+{
+  acquire(&pte_lock);
+  pte_count[(uint64)pa / PGSIZE] = cnt;
+  release(&pte_lock);
+}
+
 void
 kinit()
 {
+  initlock(&pte_lock, "ptelock");
+
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
 }
@@ -36,7 +67,14 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  {
+    // set the counter to 1 initially
+    acquire(&pte_lock);
+    pte_count[(uint64)p/PGSIZE] = 1;
+    release(&pte_lock);
+
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -50,6 +88,17 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  dec_pte_count(pa);
+  acquire(&pte_lock);
+  // if more than one process point to the page, decerease the counter;
+  // else free the page table entry
+  if (pte_count[(uint64)pa/PGSIZE] > 0)
+  {
+    release(&pte_lock);
+    return;
+  }
+  release(&pte_lock);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -77,6 +126,10 @@ kalloc(void)
   release(&kmem.lock);
 
   if(r)
+  {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    set_pte_count(r, 1);
+  }
+  
   return (void*)r;
 }
