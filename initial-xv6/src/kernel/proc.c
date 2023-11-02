@@ -152,6 +152,16 @@ found:
   p->rtime = 0;
   p->etime = 0;
   p->ctime = ticks;
+
+  // #ifdef PBS
+  p->rntime = 0;
+  p->stime = 0;
+  p->wtime = 0;
+  p->num_sch = 0;
+  p->sp = PBS_DEF_SP;
+  p->rbi = PBS_DEF_RBI;
+  // p->dp = PBS_DEF_DP;
+  // #endif
   return p;
 }
 
@@ -175,6 +185,13 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  p->rntime = 0;
+  p->stime = 0;
+  p->wtime = 0;
+  p->sp = PBS_DEF_SP;
+  p->rbi = PBS_DEF_RBI;
+  p->num_sch = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -464,14 +481,20 @@ void scheduler(void)
   struct cpu *c = mycpu();
 
   c->proc = 0;
-  for (;;)
+  while (1)
   {
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
+#ifdef PBS
+    struct proc *highest = 0;
+    int min_dp = 100;
+#endif
+
     for (p = proc; p < &proc[NPROC]; p++)
     {
       acquire(&p->lock);
+#ifndef PBS
       if (p->state == RUNNABLE)
       {
         // Switch to chosen process.  It is the process's job
@@ -485,8 +508,72 @@ void scheduler(void)
         // It should have changed its p->state before coming back.
         c->proc = 0;
       }
+#endif
+#ifdef PBS
+
+#define max(a, b) a > b ? a : b
+#define min(a, b) a < b ? a : b
+      int rbi;
+      if (p->rntime == 0 && p->wtime == 0 && p->stime == 0)
+        rbi = PBS_DEF_RBI;
+      else
+      {
+        int num = 3 * p->rntime - p->stime - p->wtime;
+        int den = p->rntime + p->stime + p->wtime + 1;
+        rbi = max(0, num * 50 / den);
+      }
+      p->rbi = rbi;
+
+      int dp = min(100, p->sp + rbi);
+      if (p->state == RUNNABLE)
+      {
+        if (highest == 0)
+        {
+          highest = p;
+          min_dp = dp;
+          continue;
+        }
+        else if (dp < min_dp)
+        {
+          release(&highest->lock);
+          highest = p;
+          min_dp = dp;
+          continue;
+        }
+        else if (dp == min_dp && p->num_sch < highest->num_sch)
+        {
+          release(&highest->lock);
+          highest = p;
+          min_dp = dp;
+          continue;
+        }
+        else if (dp == min_dp && p->num_sch == highest->num_sch && p->ctime < highest->ctime)
+        {
+          release(&highest->lock);
+          highest = p;
+          min_dp = dp;
+          continue;
+        }
+      }
+#endif
       release(&p->lock);
     }
+
+#ifdef PBS
+    if (!highest)
+      continue;
+
+    // printf("Running %d\n", highest->pid);
+    highest->state = RUNNING;
+    highest->rntime = 0;
+    highest->stime = 0;
+    highest->wtime = 0;
+    highest->num_sch += 1;
+    c->proc = highest;
+    swtch(&c->context, &highest->context);
+    c->proc = 0;
+    release(&highest->lock);
+#endif
   }
 }
 
@@ -767,7 +854,14 @@ void update_time()
     if (p->state == RUNNING)
     {
       p->rtime++;
+      p->rntime++;
     }
+    // #ifdef PBS
+    if (p->state == SLEEPING)
+      p->stime++;
+    if (p->state == RUNNABLE)
+      p->wtime++;
+    // #endif
     release(&p->lock);
   }
 }

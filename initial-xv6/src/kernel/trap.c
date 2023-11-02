@@ -78,9 +78,11 @@ void usertrap(void)
   if (killed(p))
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2)
-    yield();
+  #ifndef PBS
+    // give up the CPU if this is a timer interrupt.
+    if (which_dev == 2)
+      yield();
+  #endif
 
   usertrapret();
 }
@@ -151,9 +153,11 @@ void kerneltrap()
     panic("kerneltrap");
   }
 
-  // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
-    yield();
+  #ifndef PBS
+    // give up the CPU if this is a timer interrupt.
+    if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
+      yield();
+  #endif
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -161,27 +165,30 @@ void kerneltrap()
   w_sstatus(sstatus);
 }
 
+void print_proc()
+{
+  printf("\nProc table:\n");
+  for (int i = 0; i < NPROC; i++)
+  {
+    struct proc *p = &proc[i];
+    if (p->state != UNUSED)
+    {
+      printf("PID-%d SP-%d rTime-%d sTime-%d wTime-%d numRan-%d rTime-%d cTime-%d eTime-%d\n", p->pid, p->sp, p->rntime, p->stime, p->wtime, p->num_sch, p->rtime, p->ctime, p->etime);
+    }
+  }
+  printf("\n");
+}
+
 void clockintr()
 {
   acquire(&tickslock);
   ticks++;
   update_time();
-  // for (struct proc *p = proc; p < &proc[NPROC]; p++)
-  // {
-  //   acquire(&p->lock);
-  //   if (p->state == RUNNING)
-  //   {
-  //     printf("here");
-  //     p->rtime++;
-  //   }
-  //   // if (p->state == SLEEPING)
-  //   // {
-  //   //   p->wtime++;
-  //   // }
-  //   release(&p->lock);
-  // }
   wakeup(&ticks);
   release(&tickslock);
+#ifdef DEBUG
+  print_proc();
+#endif
 }
 
 // check if it's an external interrupt or software interrupt,

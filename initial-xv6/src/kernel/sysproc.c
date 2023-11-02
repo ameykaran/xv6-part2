@@ -108,3 +108,27 @@ sys_waitx(void)
     return -1;
   return ret;
 }
+
+uint64
+sys_set_priority(void)
+{
+  int priority, pid;
+  argint(0, &pid);
+  argint(1, &priority);
+
+  if (priority < 0 || priority > 100)
+    return -1;
+
+  struct proc *p = myproc();
+  int old_sp = p->sp;
+
+  if (priority < old_sp)
+  {
+  
+    yield();
+  }
+
+
+
+  return set_priority(pid, priority);
+}
