@@ -48,6 +48,10 @@ TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "***" 1>&2; exit 1; fi)
 endif
 
+ifndef SCHEDULER
+SCHEDULER := RR
+endif
+
 QEMU = qemu-system-riscv64
 
 CC = $(TOOLPREFIX)gcc
@@ -134,9 +138,7 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_schedulertest\
-	$U/_getreadcount\
-	$U/_test_1\
-	$U/_test_2\
+	$U/_cowtest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

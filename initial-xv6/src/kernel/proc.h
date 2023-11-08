@@ -120,15 +120,14 @@ struct proc
   uint ctime;                  // When was the process created
   uint etime;                  // When did the process exited
 
-  // #ifdef PBS
+#ifdef PBS
   uint rntime;  // How long the process ran for since last scheduled
   uint wtime;   // How long the process waited for
   uint stime;   // How long the process slept for
   uint num_sch; // Number of times the process was scheduled
   uint sp;      // Static priority of the process
   uint rbi;     // Recent behaviour interval
-  // uint dp;      // Dynamic priority of the process
-  // #endif
+#endif
 };
 
 extern struct proc proc[NPROC];

@@ -153,15 +153,15 @@ found:
   p->etime = 0;
   p->ctime = ticks;
 
-  // #ifdef PBS
+#ifdef PBS
   p->rntime = 0;
   p->stime = 0;
   p->wtime = 0;
   p->num_sch = 0;
   p->sp = PBS_DEF_SP;
   p->rbi = PBS_DEF_RBI;
-  // p->dp = PBS_DEF_DP;
-  // #endif
+// p->dp = PBS_DEF_DP;
+#endif
   return p;
 }
 
@@ -186,12 +186,14 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
 
+#ifdef PBs
   p->rntime = 0;
   p->stime = 0;
   p->wtime = 0;
   p->sp = PBS_DEF_SP;
   p->rbi = PBS_DEF_RBI;
   p->num_sch = 0;
+#endif
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -510,7 +512,6 @@ void scheduler(void)
       }
 #endif
 #ifdef PBS
-
 #define max(a, b) a > b ? a : b
 #define min(a, b) a < b ? a : b
       int rbi;
@@ -854,14 +855,16 @@ void update_time()
     if (p->state == RUNNING)
     {
       p->rtime++;
+#ifdef PBs
       p->rntime++;
+#endif
     }
-    // #ifdef PBS
+#ifdef PBS
     if (p->state == SLEEPING)
       p->stime++;
     if (p->state == RUNNABLE)
       p->wtime++;
-    // #endif
+#endif
     release(&p->lock);
   }
 }

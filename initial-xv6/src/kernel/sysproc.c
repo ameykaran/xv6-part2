@@ -112,6 +112,7 @@ sys_waitx(void)
 uint64
 sys_set_priority(void)
 {
+#ifdef PBs
   int priority, pid;
   argint(0, &pid);
   argint(1, &priority);
@@ -124,11 +125,10 @@ sys_set_priority(void)
 
   if (priority < old_sp)
   {
-  
     yield();
   }
 
-
-
-  return set_priority(pid, priority);
+#endif
+  return 0;
+  // return set_priority(pid, priority);
 }
