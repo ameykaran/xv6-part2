@@ -64,7 +64,6 @@ void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
 void            inc_pte_count(void *);
-void            dec_pte_count(void *);
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -149,6 +148,7 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
+int             cow_page_fault(pagetable_t pt, uint64 va);
 
 // uart.c
 void            uartinit(void);

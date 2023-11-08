@@ -8,7 +8,7 @@
 
 struct spinlock tickslock;
 uint ticks;
-extern pte_count[];
+extern int pte_count[];
 
 extern char trampoline[], uservec[], userret[];
 
@@ -26,6 +26,42 @@ void trapinit(void)
 void trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
+}
+
+// page fault has occurred due to cow flag
+int cow_page_fault(pagetable_t pt, uint64 va)
+{
+  if (va >= MAXVA)
+    return -1;
+
+  pte_t *pte = walk(pt, va, 0);
+  if (pte == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_V) == 0)
+    return -1;
+
+  uint flags = PTE_FLAGS(*pte);
+  if (!(flags & PTE_COW))
+    return -1;
+
+  uint64 old_pa = PTE2PA(*pte);
+  if (old_pa == 0)
+    return -1;
+
+  // Make it writable and remove cow
+  flags = (flags | PTE_W) & ~PTE_COW;
+
+  // allocate a new pte
+  char *new_pa;
+  if ((new_pa = kalloc()) == 0)
+    return -1;
+
+  // copy the old entry to the newly allocated one
+  memmove(new_pa, (char *)old_pa, PGSIZE);
+  *pte = PA2PTE(new_pa) | flags;
+
+  // decrease the counter or free the pte
+  kfree((char *)old_pa);
+
+  return 0;
 }
 
 //
@@ -66,7 +102,7 @@ void usertrap(void)
     syscall();
   }
   // pagefault occurred
-  else if (r_scause == 15)
+  else if (r_scause() == 15)
   {
     pagetable_t pt = p->pagetable;
 
@@ -78,51 +114,13 @@ void usertrap(void)
       exit(-1);
     }
 
-    pte_t *pte = walk(pt, va, 0);
-    uint64 pa = PTE2PA(*pte);
-
-    if (*pte & PTE_COW)
-    {
-      if (pte_count[(uint64)pa / PGSIZE] > 1)
-      {
-        uint flags;
-        char *mem;
-
-        flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW; // Make it writable and remove cow
-
-        // allocate a new pte
-        if ((mem = kalloc()) == 0)
-        {
-          p->killed = 1;
-          exit(-1);
-        }
-        // copy the old entry to the newly allocated one
-        memmove(mem, (char *)pa, PGSIZE);
-        *pte = PA2PTE(mem) | flags;
-
-        // decrease the counter or free the pte
-        kfree((char *)pa);
-
-        p->trapframe->epc = r_sepc(); // restart the instruction
-      }
-
-      else if (pte_count[(uint64)pa / PGSIZE] == 1)
-      {
-        // it is a page with only one reference to it
-        *pte = (*pte & ~PTE_COW) | PTE_W; // remove cow flag and set write to true
-
-        p->trapframe->epc = r_sepc(); // restart the instruction
-      }
-    }
+    if (cow_page_fault(pt, va) != 0)
+      return;
   }
 
   else if ((which_dev = devintr()) != 0)
   {
-#ifndef PBS
-    // give up the CPU if this is a timer interrupt.
-    if (which_dev == 2)
-      yield();
-#endif
+    // ok
   }
   else
   {
@@ -133,6 +131,12 @@ void usertrap(void)
 
   if (killed(p))
     exit(-1);
+
+  // #ifdef PBS
+  // give up the CPU if this is a timer interrupt.
+  if (which_dev == 2)
+    yield();
+  // #endif
 
   usertrapret();
 }
@@ -203,11 +207,11 @@ void kerneltrap()
     panic("kerneltrap");
   }
 
-#ifndef PBS
+  // #ifndef PBS
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();
-#endif
+  // #endif
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -215,6 +219,7 @@ void kerneltrap()
   w_sstatus(sstatus);
 }
 
+#ifdef PBs
 void print_proc()
 {
   printf("\nProc table:\n");
@@ -228,6 +233,7 @@ void print_proc()
   }
   printf("\n");
 }
+#endif
 
 void clockintr()
 {
