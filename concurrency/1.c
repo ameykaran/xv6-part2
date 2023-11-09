@@ -223,6 +223,7 @@ int main()
             }
         }
         pthread_mutex_unlock(&time_lock);
+        usleep(500000);
     }
 
     printf("\n");
