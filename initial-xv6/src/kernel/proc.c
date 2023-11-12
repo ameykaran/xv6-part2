@@ -160,7 +160,7 @@ found:
   p->num_sch = 0;
   p->sp = PBS_DEF_SP;
   p->rbi = PBS_DEF_RBI;
-// p->dp = PBS_DEF_DP;
+  p->dp = PBS_DEF_DP;
 #endif
   return p;
 }
@@ -186,12 +186,13 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
 
-#ifdef PBs
+#ifdef PBS
   p->rntime = 0;
   p->stime = 0;
   p->wtime = 0;
   p->sp = PBS_DEF_SP;
   p->rbi = PBS_DEF_RBI;
+  p->dp = PBS_DEF_DP;
   p->num_sch = 0;
 #endif
 }
@@ -512,47 +513,25 @@ void scheduler(void)
       }
 #endif
 #ifdef PBS
-#define max(a, b) a > b ? a : b
-#define min(a, b) a < b ? a : b
-      int rbi;
-      if (p->rntime == 0 && p->wtime == 0 && p->stime == 0)
-        rbi = PBS_DEF_RBI;
-      else
+      if (p->state != RUNNABLE)
       {
-        int num = 3 * p->rntime - p->stime - p->wtime;
-        int den = p->rntime + p->stime + p->wtime + 1;
-        rbi = max(0, num * 50 / den);
+        release(&p->lock);
+        continue;
       }
-      p->rbi = rbi;
 
-      int dp = min(100, p->sp + rbi);
       if (p->state == RUNNABLE)
       {
         if (highest == 0)
         {
           highest = p;
-          min_dp = dp;
+          min_dp = p->dp;
           continue;
         }
-        else if (dp < min_dp)
+        else if ((p->dp < min_dp) || (p->dp == min_dp && p->num_sch < highest->num_sch) || (p->dp == min_dp && p->num_sch == highest->num_sch && p->ctime < highest->ctime))
         {
           release(&highest->lock);
           highest = p;
-          min_dp = dp;
-          continue;
-        }
-        else if (dp == min_dp && p->num_sch < highest->num_sch)
-        {
-          release(&highest->lock);
-          highest = p;
-          min_dp = dp;
-          continue;
-        }
-        else if (dp == min_dp && p->num_sch == highest->num_sch && p->ctime < highest->ctime)
-        {
-          release(&highest->lock);
-          highest = p;
-          min_dp = dp;
+          min_dp = p->dp;
           continue;
         }
       }
@@ -564,11 +543,11 @@ void scheduler(void)
     if (!highest)
       continue;
 
-    // printf("Running %d\n", highest->pid);
+    // printf("Highest %d %d %d %d %d %d %d \n", highest->pid, highest->sp, highest->rbi, highest->num_sch, highest->rntime, highest->stime, highest->wtime);
     highest->state = RUNNING;
     highest->rntime = 0;
     highest->stime = 0;
-    highest->wtime = 0;
+    // highest->wtime = 0;
     highest->num_sch += 1;
     c->proc = highest;
     swtch(&c->context, &highest->context);
@@ -786,7 +765,7 @@ void procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
+    printf("%d %s %s %d %d %d", p->pid, state, p->name, p->sp, p->rbi, p->dp);
     printf("\n");
   }
 }
@@ -852,17 +831,24 @@ void update_time()
   for (p = proc; p < &proc[NPROC]; p++)
   {
     acquire(&p->lock);
+    if (p->state == UNUSED)
+    {
+      release(&p->lock);
+      continue;
+    }
+
     if (p->state == RUNNING)
     {
-      p->rtime++;
-#ifdef PBs
+#ifdef PBS
       p->rntime++;
+      // printf("Rntime inc\n");
 #endif
+      p->rtime++;
     }
 #ifdef PBS
-    if (p->state == SLEEPING)
+    else if (p->state == SLEEPING)
       p->stime++;
-    if (p->state == RUNNABLE)
+    else if (p->state == RUNNABLE)
       p->wtime++;
 #endif
     release(&p->lock);

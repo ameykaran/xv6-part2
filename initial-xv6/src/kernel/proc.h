@@ -127,6 +127,7 @@ struct proc
   uint num_sch; // Number of times the process was scheduled
   uint sp;      // Static priority of the process
   uint rbi;     // Recent behaviour interval
+  uint dp;      // Dynamic priority of the process
 #endif
 };
 

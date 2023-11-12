@@ -34,15 +34,16 @@ int cow_page_fault(pagetable_t pt, uint64 va)
   if (va >= MAXVA)
     return -1;
 
-  pte_t *pte = walk(pt, va, 0);
-  if (pte == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_V) == 0)
+  pte_t *my_pte = walk(pt, va, 0);
+  if (my_pte == 0)
     return -1;
 
-  uint flags = PTE_FLAGS(*pte);
-  if (!(flags & PTE_COW))
+  uint flags = PTE_FLAGS(*my_pte);
+
+  if ((flags & PTE_U) == 0 || (flags & PTE_V) == 0 || (flags & PTE_COW) == 0)
     return -1;
 
-  uint64 old_pa = PTE2PA(*pte);
+  uint64 old_pa = PTE2PA(*my_pte);
   if (old_pa == 0)
     return -1;
 
@@ -50,16 +51,16 @@ int cow_page_fault(pagetable_t pt, uint64 va)
   flags = (flags | PTE_W) & ~PTE_COW;
 
   // allocate a new pte
-  char *new_pa;
+  void *new_pa;
   if ((new_pa = kalloc()) == 0)
     return -1;
 
   // copy the old entry to the newly allocated one
-  memmove(new_pa, (char *)old_pa, PGSIZE);
-  *pte = PA2PTE(new_pa) | flags;
+  memmove(new_pa, (void *)old_pa, PGSIZE);
+  *my_pte = PA2PTE(new_pa) | flags;
 
   // decrease the counter or free the pte
-  kfree((char *)old_pa);
+  kfree((void *)old_pa);
 
   return 0;
 }
@@ -132,11 +133,9 @@ void usertrap(void)
   if (killed(p))
     exit(-1);
 
-  // #ifdef PBS
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2)
     yield();
-  // #endif
 
   usertrapret();
 }
@@ -207,11 +206,9 @@ void kerneltrap()
     panic("kerneltrap");
   }
 
-  // #ifndef PBS
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();
-  // #endif
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -219,7 +216,8 @@ void kerneltrap()
   w_sstatus(sstatus);
 }
 
-#ifdef PBs
+#ifdef PBS
+
 void print_proc()
 {
   printf("\nProc table:\n");
@@ -228,7 +226,7 @@ void print_proc()
     struct proc *p = &proc[i];
     if (p->state != UNUSED)
     {
-      printf("PID-%d SP-%d rTime-%d sTime-%d wTime-%d numRan-%d rTime-%d cTime-%d eTime-%d\n", p->pid, p->sp, p->rntime, p->stime, p->wtime, p->num_sch, p->rtime, p->ctime, p->etime);
+      printf("PID-%d SP-%d RBI-%d rnTime-%d sTime-%d wTime-%d numRan-%d rTime-%d cTime-%d eTime-%d\n", p->pid, p->sp, p->rbi, p->rntime, p->stime, p->wtime, p->num_sch, p->rtime, p->ctime, p->etime);
     }
   }
   printf("\n");
@@ -238,13 +236,41 @@ void print_proc()
 void clockintr()
 {
   acquire(&tickslock);
-  ticks++;
-  update_time();
-  wakeup(&ticks);
-  release(&tickslock);
 #ifdef DEBUG
   print_proc();
 #endif
+
+  ticks++;
+  update_time();
+
+#ifdef PBS
+#define max(a, b) a > b ? a : b
+#define min(a, b) a < b ? a : b
+
+  for (struct proc *p = proc; p < &proc[NPROC]; p++)
+  {
+    if (p->state == UNUSED)
+      continue;
+
+    int rbi;
+    if (p->rntime == 0 && p->wtime == 0 && p->stime == 0)
+      rbi = PBS_DEF_RBI;
+    else
+    {
+      int num = 3 * p->rntime - p->stime - p->wtime;
+      int den = p->rntime + p->stime + p->wtime + 1;
+      rbi = max(0, num * 50 / den);
+    }
+    p->rbi = rbi;
+
+    p->dp = min(100, p->sp + p->rbi);
+  }
+
+#endif
+
+  wakeup(&ticks);
+
+  release(&tickslock);
 }
 
 // check if it's an external interrupt or software interrupt,

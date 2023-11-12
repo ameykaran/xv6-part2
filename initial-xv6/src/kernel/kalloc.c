@@ -18,46 +18,44 @@ struct run {
   struct run *next;
 };
 
+#define PA_COUNT (PGROUNDUP(PHYSTOP) / PGSIZE)
 struct {
   struct spinlock lock;
   struct run *freelist;
+  int pte_count[PA_COUNT];
 } kmem;
 
-#define PA_NUM (PGROUNDUP(PHYSTOP) / PGSIZE)
-
-struct spinlock pte_lock;
-int pte_count[PA_NUM];
-
 void
-inc_pte_count(void *pa)
+inc_count(void *pa)
 {
-  acquire(&pte_lock);
-  pte_count[(uint64)pa / PGSIZE] += 1;
-  release(&pte_lock);
+  kmem.pte_count[(uint64)pa / PGSIZE] += 1;
 }
 
 void
-dec_pte_count(void *pa)
+dec_count(void *pa)
 {
-  acquire(&pte_lock);
-  pte_count[(uint64)pa / PGSIZE] -= 1;
-  release(&pte_lock);
+  kmem.pte_count[(uint64)pa / PGSIZE] -= 1;
 }
 
 void
-set_pte_count(void *pa, int cnt)
+safe_inc_count(void *pa)
 {
-  acquire(&pte_lock);
-  pte_count[(uint64)pa / PGSIZE] = cnt;
-  release(&pte_lock);
+  acquire(&kmem.lock);
+  inc_count(pa);
+  release(&kmem.lock);
+}
+
+void
+set_count(void *pa, int cnt)
+{
+  kmem.pte_count[(uint64)pa / PGSIZE] = cnt;
 }
 
 void
 kinit()
 {
-  initlock(&pte_lock, "ptelock");
-
   initlock(&kmem.lock, "kmem");
+  memset(&kmem.pte_count, 0, sizeof(kmem.pte_count));
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -69,10 +67,7 @@ freerange(void *pa_start, void *pa_end)
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
   {
     // set the counter to 1 initially
-    acquire(&pte_lock);
-    pte_count[(uint64)p/PGSIZE] = 1;
-    release(&pte_lock);
-
+    set_count(p, 1);
     kfree(p);
   }
 }
@@ -89,23 +84,21 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  dec_pte_count(pa);
-  acquire(&pte_lock);
+  acquire(&kmem.lock);
+  dec_count(pa);
   // if more than one process point to the page, decerease the counter;
   // else free the page table entry
-  if (pte_count[(uint64)pa/PGSIZE] > 0)
+  if (kmem.pte_count[(uint64)pa/PGSIZE] > 0)
   {
-    release(&pte_lock);
+    release(&kmem.lock);
     return;
   }
-  release(&pte_lock);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
@@ -128,7 +121,7 @@ kalloc(void)
   if(r)
   {
     memset((char*)r, 5, PGSIZE); // fill with junk
-    set_pte_count(r, 1);
+    set_count(r, 1);
   }
   
   return (void*)r;

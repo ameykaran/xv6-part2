@@ -137,7 +137,10 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_setpriority\
 	$U/_schedulertest\
+	$U/_schedulertest2\
+	$U/_schedulertest3\
 	$U/_cowtest\
 
 fs.img: mkfs/mkfs README $(UPROGS)

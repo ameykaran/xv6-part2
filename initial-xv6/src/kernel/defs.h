@@ -63,7 +63,7 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
-void            inc_pte_count(void *);
+void            safe_inc_count(void *);
 
 // log.c
 void            initlog(int, struct superblock*);

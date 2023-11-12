@@ -112,7 +112,8 @@ sys_waitx(void)
 uint64
 sys_set_priority(void)
 {
-#ifdef PBs
+  int old_sp = PBS_DEF_SP;
+#ifdef PBS
   int priority, pid;
   argint(0, &pid);
   argint(1, &priority);
@@ -120,15 +121,18 @@ sys_set_priority(void)
   if (priority < 0 || priority > 100)
     return -1;
 
-  struct proc *p = myproc();
-  int old_sp = p->sp;
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++)
+    if (p->pid == pid)
+      break;
+
+  old_sp = p->sp;
+  p->sp = priority;
 
   if (priority < old_sp)
-  {
     yield();
-  }
 
 #endif
-  return 0;
+  return old_sp;
   // return set_priority(pid, priority);
 }

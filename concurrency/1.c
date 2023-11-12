@@ -96,6 +96,9 @@ void *serve_order(void *arg)
         if (cust->start_time + i - cust->arrival_time == cust->tolerance_time + 1)
         {
             printf(ANSI_FG_COLOR_RED "Customer %d leaves without their order at %d second(s)\n" ANSI_COLOR_RESET, cust->id, cust->start_time + i);
+            pthread_mutex_lock(&time_lock);
+            total_wait_time += (ticks - cust->start_time - 1);
+            pthread_mutex_unlock(&time_lock);
             cust_left = 1;
         }
     }
