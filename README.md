@@ -1,15 +1,9 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-24ddc0f5d75046c5622901739e7c5dd533143b0c8e959d652212380cedb1ea36.svg)](https://classroom.github.com/a/JH3nieSp)
-# OSN Monsoon 2023 mini project 3
-## xv6 revisited and concurrency
+xv6-Part2
+=================
+- Priority Based Scheduler(PBS) scheduling policy has been implemented in xv6.
+- `setpriority` syscall was added to change the priority of a process.
+- Copy-on-Write(COW) fork has been implemented in xv6.
 
-*when will the pain and suffering end?*
-
-## Some pointers/instructions
-- main xv6 source code is present inside `initial_xv6/src` directory.
-- Feel free to update this directory and add your code from the previous assignment here.
-- By now, I believe you are already well aware on how you can check your xv6 implementations. 
-- Just to reiterate, make use of the `procdump` function and the `usertests` and `schedulertest` command.
-- work inside the `concurrency/` directory for the Concurrency questions (`Cafe Sim` and `Ice Cream Parlor Sim`).
-
-- Answer all the theoretical/analysis-based questions (for PBS scheduler and the concurrency questions) in a single `md `file.
-- You may delete these instructions and add your report before submitting. 
+### Priority Based Scheduler(PBS)
+- The scheduler assigns a priority to each process and runs the process with the highest priority.
+- The scheduler is preemptive, meaning that it can stop a process if it is running and assign the CPU to another process.
